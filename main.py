@@ -1,5 +1,6 @@
 import tempfile
 import os
+import sys
 from flask import Flask, request, redirect, send_file
 from skimage import io
 import base64
@@ -8,7 +9,10 @@ import numpy as np
 
 app = Flask(__name__)
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 main_html = """
+<!DOCTYPE html>
 <html>
 <head>
 <title>Zona de Dibujo UPC</title>
@@ -41,12 +45,13 @@ main_html = """
         display: flex;
         gap: 40px; 
         background: #fff;
-        padding: 50px; /* Más padding */
+        padding: 40px;
         border-radius: 40px;
         box-shadow: 0 20px 40px rgba(0,0,0,0.15);
         align-items: center;
         justify-content: center;
         border: 5px solid #fff;
+        flex-wrap: wrap;
     }
 
     .palette {
@@ -57,12 +62,11 @@ main_html = """
         background: #f0f4f8;
         border-radius: 20px;
         border: 3px dashed #cbd5e0;
-        height: fit-content; 
     }
 
     .color-btn {
-        width: 60px; 
-        height: 60px;
+        width: 50px; 
+        height: 50px;
         border-radius: 50%;
         border: 4px solid #fff;
         box-shadow: 0 4px 6px rgba(0,0,0,0.2);
@@ -85,9 +89,8 @@ main_html = """
         align-items: center;
     }
 
-    /* CAMBIO: Canvas más grande */
     canvas {
-        border: 10px solid #FFB84C; /* Borde más grueso */
+        border: 10px solid #FFB84C;
         border-radius: 30px;
         cursor: crosshair;
         background-color: white;
@@ -98,20 +101,20 @@ main_html = """
 
     .controls {
         display: flex;
-        gap: 30px; /* Más espacio entre botones */
+        gap: 20px;
         width: 100%;
         justify-content: center;
         align-items: center;
-        margin-top: 30px;
+        margin-top: 25px;
     }
 
     .btn {
-        width: 180px; /* Botones más grandes */
-        height: 60px;
+        width: 160px;
+        height: 50px;
         border: none;
-        border-radius: 60px;
+        border-radius: 50px;
         font-family: 'Fredoka One', cursive;
-        font-size: 20px; /* Texto más grande */
+        font-size: 18px;
         cursor: pointer;
         color: white;
         transition: all 0.1s;
@@ -141,7 +144,7 @@ main_html = """
     .btn-send:hover { background-color: #3bcbc2; }
 
     .logo {
-        margin-bottom: 15px;
+        margin-bottom: 10px;
         filter: drop-shadow(0 4px 4px rgba(0,0,0,0.1));
     }
 </style>
@@ -171,7 +174,7 @@ main_html = """
       if(aleatorio == "triste") emojiChar = "😢";
       if(aleatorio == "sorprendido") emojiChar = "😲";
 
-      document.getElementById('mensaje').innerHTML  = '¡A dibujar: <span style="color:#FF6B6B">' + aleatorio.toUpperCase() + ' ' + emojiChar + '</span>!';
+      document.getElementById('mensaje').innerHTML  = '¡Dibuja: <span style="color:#FF6B6B">' + aleatorio.toUpperCase() + ' ' + emojiChar + '</span>!';
       document.getElementById('numero').value = aleatorio;
 
       setGuideBackground(aleatorio);
@@ -222,7 +225,7 @@ main_html = """
       if (isDown) {
           ctx.beginPath();
           ctx.strokeStyle = curColor; 
-          ctx.lineWidth = 15; // Trazo más grueso para el canvas más grande
+          ctx.lineWidth = 15; 
           ctx.lineCap = "round"; 
           ctx.lineJoin = "round";
           ctx.moveTo(lastX, lastY);
@@ -239,13 +242,14 @@ main_html = """
   }
 
   function prepareImg() {
+     var canvas = document.getElementById('myCanvas');
      document.getElementById('myImage').value = canvas.toDataURL();
   }
   
   function setGuideBackground(emotion) {
       let svgContent = "";
       let colorGuia = "#555"; 
-      let grosor = "8"; // Guía más gruesa
+      let grosor = "8"; 
       
       // Coordenadas escaladas para 400x400
       let head = `<circle cx="200" cy="200" r="160" fill="none" stroke="${colorGuia}" stroke-width="${grosor}" stroke-dasharray="12,12" opacity="0.3" />`;
@@ -263,13 +267,11 @@ main_html = """
           svgContent = head + eyes + mouth;
       }
 
-      // SVG tamaño 400x400
       let svgData = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">${svgContent}</svg>`;
       let url = "url('data:image/svg+xml;base64," + btoa(svgData) + "')";
       
       document.getElementById('myCanvas').style.backgroundImage = url;
   }
-
 </script>
 <body onload="InitThis();">
     
@@ -277,7 +279,7 @@ main_html = """
       <img src="https://upload.wikimedia.org/wikipedia/commons/f/fc/UPC_logo_transparente.png" width="150"/>
     </div>
 
-    <h1 id="mensaje">Cargando diversión...</h1>
+    <h1 id="mensaje">Cargando...</h1>
 
     <div class="main-container">
         <div class="palette">
@@ -297,7 +299,7 @@ main_html = """
                 <form method="post" action="upload" onsubmit="javascript:prepareImg();" enctype="multipart/form-data" style="display:inline; margin:0;">
                     <input id="numero" name="numero" type="hidden" value="">
                     <input id="myImage" name="myImage" type="hidden" value="">
-                    <button id="bt_upload" type="submit" class="btn btn-send">¡LISTO!</button>
+                    <button id="bt_upload" type="submit" class="btn btn-send">¡ENVIAR!</button>
                 </form>
             </div>
         </div>
@@ -306,6 +308,7 @@ main_html = """
 </body>
 </html>
 """
+
 
 @app.route("/")
 def main():
@@ -316,16 +319,18 @@ def upload():
     try:
         img_data = request.form.get('myImage').replace("data:image/png;base64,","")
         aleatorio = request.form.get('numero')
-        print(aleatorio)
-        if not os.path.exists(str(aleatorio)):
-            os.makedirs(str(aleatorio))
+        
+        print("Guardando imagen para:", aleatorio)
+        
+        if not os.path.exists(aleatorio):
+            os.makedirs(aleatorio)
             
-        with tempfile.NamedTemporaryFile(delete = False, mode = "w+b", suffix='.png', dir=str(aleatorio)) as fh:
+        with tempfile.NamedTemporaryFile(delete=False, mode="w+b", suffix='.png', dir=aleatorio) as fh:
             fh.write(base64.b64decode(img_data))
-        print("Image uploaded")
+        
+        print("Image uploaded successfully")
     except Exception as err:
-        print("Error occurred")
-        print(err)
+        print("Error occurred:", err)
 
     return redirect("/", code=302)
 
@@ -334,36 +339,48 @@ def prepare_dataset():
     images = []
     d = ["feliz", "triste", "sorprendido"]
     digits = []
+    
     for digit in d:
-      filelist = glob.glob('{}/*.png'.format(digit))
-      if filelist:
-          images_read = io.concatenate_images(io.imread_collection(filelist))
-          if len(images_read.shape) == 4:
-              images_read = images_read[:, :, :, 3] 
-          digits_read = np.array([digit] * images_read.shape[0])
-          images.append(images_read)
-          digits.append(digits_read)
+        filelist = glob.glob('{}/*.png'.format(digit))
+        
+        if filelist:
+            images_read = io.concatenate_images(io.imread_collection(filelist))
+            
+            if len(images_read.shape) == 4:
+                images_read = images_read[:, :, :, 3] 
+                
+            digits_read = np.array([digit] * images_read.shape[0])
+            images.append(images_read)
+            digits.append(digits_read)
     
     if images:
         images = np.vstack(images)
         digits = np.concatenate(digits)
+        
         np.save('X.npy', images)
         np.save('y.npy', digits)
-        return "OK!"
+        return "¡OK! Archivos X.npy y y.npy generados correctamente."
     else:
-        return "No hay imágenes para procesar."
+        return "No se encontraron imágenes en las carpetas para procesar."
 
 @app.route('/X.npy', methods=['GET'])
 def download_X():
-    return send_file('./X.npy')
+    if os.path.exists('./X.npy'):
+        return send_file('./X.npy', as_attachment=True)
+    else:
+        return "Primero debes ir a /prepare para generar el archivo."
 
 @app.route('/y.npy', methods=['GET'])
 def download_y():
-    return send_file('./y.npy')
+    if os.path.exists('./y.npy'):
+        return send_file('./y.npy', as_attachment=True)
+    else:
+        return "Primero debes ir a /prepare para generar el archivo."
 
 if __name__ == "__main__":
     digits = ["feliz", "triste", "sorprendido"]
     for d in digits:
-        if not os.path.exists(str(d)):
-            os.mkdir(str(d))
+        if not os.path.exists(d):
+            os.makedirs(d)
+            
     app.run(debug=True)
